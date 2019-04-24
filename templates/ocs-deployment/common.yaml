@@ -12,7 +12,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: rook-ceph
+  name: {{ cluster_name | default('openshift-storage') }}
 ---
 # The CRD declarations
 apiVersion: apiextensions.k8s.io/v1beta1
@@ -255,7 +255,7 @@ apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: Role
 metadata:
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
   labels:
     operator: rook
     storage-backend: ceph
@@ -409,7 +409,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
   labels:
     operator: rook
     storage-backend: ceph
@@ -419,7 +419,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
   labels:
     operator: rook
     storage-backend: ceph
@@ -430,14 +430,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Grant the rook system daemons cluster-wide access to manage the Rook CRDs, PVCs, and storage classes
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-global
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
   labels:
     operator: rook
     storage-backend: ceph
@@ -448,7 +448,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 #################################################################################################################
 # Beginning of cluster-specific resources. The example will assume the cluster will be created in the "rook-ceph"
@@ -460,20 +460,20 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: rook-ceph-osd
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Service account for the Ceph Mgr. Must exist and cannot be renamed.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-osd
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
@@ -484,7 +484,7 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-mgr-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 aggregationRule:
   clusterRoleSelectors:
   - matchLabels:
@@ -495,7 +495,7 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-mgr-system-rules
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
   labels:
       rbac.ceph.rook.io/aggregate-to-rook-ceph-mgr-system: "true"
 rules:
@@ -513,7 +513,7 @@ kind: Role
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 rules:
 - apiGroups:
   - ""
@@ -547,7 +547,7 @@ kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-cluster-mgmt
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -555,14 +555,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Allow the osd pods in this namespace to work with configmaps
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-osd
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -570,14 +570,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-osd
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Allow the ceph mgr to access the cluster-specific resources necessary for the mgr modules
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -585,14 +585,14 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Allow the ceph mgr to access the rook system resources necessary for the mgr modules
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: rook-ceph-mgr-system
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -600,7 +600,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
 # Allow the ceph mgr to access cluster-wide resources necessary for the mgr modules
 kind: ClusterRoleBinding
@@ -614,5 +614,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: rook-ceph-mgr
-  namespace: rook-ceph
+  namespace: {{ cluster_namespace | default('openshift-storage') }}
 ---
