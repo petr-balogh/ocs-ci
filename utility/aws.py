@@ -1,5 +1,3 @@
-#/user/bin/env python3
-import argparse
 import logging
 import time
 
@@ -12,6 +10,7 @@ logger = logging.getLogger(name=__file__)
 class AWSTimeoutException(Exception):
     pass
 
+
 class AWS():
     """
     This is wrapper class for AWS
@@ -19,7 +18,6 @@ class AWS():
 
     _ec2_client = None
     _ec2_resource = None
-
 
     @property
     def ec2_client(self):
@@ -42,7 +40,6 @@ class AWS():
         if not self._ec2_resource:
             self._ec2_resource = boto3.resource('ec2')
         return self._ec2_resource
-
 
     def get_instances_by_name_pattern(self, pattern):
         """ Get instances by Name tag pattern
@@ -101,8 +98,8 @@ class AWS():
         volume_type='gp2',
     ):
         """ Create volume and attach to instance
-    
-        Args:   
+
+        Args:
             availability_zone (str): availability zone e.g.: us-west-1b
             instance_id (str): id of instance where to attach the volume
             name (str): name of volume
@@ -113,7 +110,6 @@ class AWS():
             timeout (int): timeout in seconds for volume creation (default: 20)
             volume_type (str): 'standard'|'io1'|'gp2'|'sc1'|'st1'
                 (default: gp2)
-            
         """
         volume_response = self.ec2_client.create_volume(
             AvailabilityZone=availability_zone,

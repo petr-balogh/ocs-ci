@@ -266,6 +266,7 @@ def create_rook_resource(template_name, rook_data, cluster_path):
     # TODO: logging this just for testing purposes, change to run_cmd
     log.info(f"oc create -f {cfg_file}")
 
+
 def create_eb2_volumes(worker_pattern, size=100):
     """
     Create volumes on workers
