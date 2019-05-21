@@ -1,3 +1,4 @@
+import collections
 import getpass
 import json
 import logging
@@ -844,3 +845,24 @@ class TimeoutSampler(object):
                 f"({self.func.__name__}) return incorrect status after timeout"
             )
             return False
+
+
+def update_dict_recursively(d, u):
+    """
+    Update dict recursively to not delete nested dict under second and more
+    nested level.
+
+    Args:
+        d (dict): Dict to update
+        u (dict): Other dict used for update d dict
+    """
+    for k, v in u.items():
+        if isinstance(d, collections.Mapping):
+            if isinstance(v, collections.Mapping):
+                r = update_dict_recursively(d.get(k, {}), v)
+                d[k] = r
+            else:
+                d[k] = u[k]
+        else:
+            d = {k: u[k]}
+    return d
