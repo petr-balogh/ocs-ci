@@ -195,6 +195,7 @@ def create_storage_class(
             'csi.storage.k8s.io/node-stage-secret-namespace'
         ] = defaults.ROOK_CLUSTER_NAMESPACE
         sc_data['parameters']['fsName'] = get_cephfs_name()
+    sc_data['parameters']['clusterID'] = config.ENV_DATA['cluster_namespace']
     sc_data['parameters']['pool'] = interface_name
 
     sc_data['metadata']['name'] = (
