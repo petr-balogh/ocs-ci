@@ -9,11 +9,14 @@ from ocs_ci.utility import templating, utils
 from ocs_ci.utility.utils import run_cmd
 from ocs_ci.ocs.ripsaw import RipSaw
 from ocs_ci.ocs import constants
+from ocs_ci.ocs import constantss
 from ocs_ci.framework.testlib import E2ETest, tier1
 from tests import helpers
 from ocs_ci.ocs.exceptions import UnexpectedBehaviour
 
 log = logging.getLogger(__name__)
+
+print(constantss)
 
 
 @pytest.fixture(scope='class')
