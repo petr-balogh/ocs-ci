@@ -1,3 +1,5 @@
+import pytest
+
 from ocs_ci.framework import config
 from ocs_ci.framework.pytest_customization.marks import polarion_id, pre_upgrade
 from ocs_ci.framework.testlib import ignore_leftovers, ManageTest, tier1
@@ -11,6 +13,7 @@ from ocs_ci.utility.utils import ceph_health_check
 @ignore_leftovers
 @tier1
 @polarion_id('OCS-1191')
+@pytest.mark.last
 class TestAddCapacity(ManageTest):
     """
     Automates adding variable capacity to the cluster while IOs running
