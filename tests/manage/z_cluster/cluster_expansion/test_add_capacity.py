@@ -62,3 +62,7 @@ class TestAddCapacityPreUpgrade(ManageTest):
         Test to add variable capacity to the OSD cluster while IOs running
         """
         add_capacity_test()
+        fail_test = True
+        import ipdb; ipdb.set_trace()
+        if fail_test:
+            assert 0 == 1, "Failing test just for collecting must gather"

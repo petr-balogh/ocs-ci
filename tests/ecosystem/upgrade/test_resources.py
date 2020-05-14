@@ -25,6 +25,10 @@ def test_start_pre_upgrade_pod_io(pre_upgrade_pods_running_io):
             constants.STATUS_RUNNING,
             timeout=600
         )
+    fail_test = True
+    import ipdb; ipdb.set_trace()
+    if fail_test:
+        assert 0 == 1, "Failing test just for collecting must gather"
 
 
 @post_upgrade

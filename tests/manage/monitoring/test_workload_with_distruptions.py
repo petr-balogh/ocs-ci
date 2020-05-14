@@ -57,6 +57,10 @@ def test_workload_with_checksum(workload_storageutilization_checksum_rbd):
     assert len(fio['jobs']) == 1, "single fio job was executed"
     msg = "no errors should be reported by fio when writing data"
     assert fio['jobs'][0]['error'] == 0, msg
+    fail_test = True
+    import ipdb; ipdb.set_trace()
+    if fail_test:
+        assert 0 == 1, "Failing test just for collecting must gather"
 
 
 @post_upgrade

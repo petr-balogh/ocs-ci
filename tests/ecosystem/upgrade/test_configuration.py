@@ -44,6 +44,10 @@ def test_load_crush_map(pre_upgrade_crush_map):
     Load CRUSH map.
     """
     assert pre_upgrade_crush_map
+    fail_test = True
+    import ipdb; ipdb.set_trace()
+    if fail_test:
+        assert 0 == 1, "Failing test just for collecting must gather"
 
 
 @post_upgrade

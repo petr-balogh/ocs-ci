@@ -103,6 +103,10 @@ def test_fill_bucket(
             awscli_pod=awscli_pod_session
         ), 'Checksum comparision between original and result object failed'
     assert bucket.status == constants.STATUS_BOUND
+    fail_test = True
+    import ipdb; ipdb.set_trace()
+    if fail_test:
+        assert 0 == 1, "Failing test just for collecting must gather"
 
 
 @aws_platform_required
@@ -173,6 +177,10 @@ def test_buckets_before_upgrade(upgrade_buckets, mcg_obj_session):
     """
     for bucket in mcg_obj_session.read_system().get('buckets'):
         assert bucket.get('mode') == BS_OPTIMAL
+    fail_test = True
+    import ipdb; ipdb.set_trace()
+    if fail_test:
+        assert 0 == 1, "Failing test just for collecting must gather"
 
 
 @aws_platform_required
