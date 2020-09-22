@@ -1127,6 +1127,7 @@ def cluster_load(
     """
     Run IO during the test execution
     """
+    return
     cl_load_obj = None
     io_in_bg = config.RUN.get('io_in_bg')
     log_utilization = config.RUN.get('log_utilization')
@@ -1207,6 +1208,7 @@ def reduce_cluster_load_implementation(request, pause):
     Pause/reduce the background cluster load
 
     """
+    return
     if config.RUN.get('io_in_bg'):
 
         def finalizer():
@@ -1238,6 +1240,7 @@ def pause_cluster_load(request):
     Pause the background cluster load
 
     """
+    return
     reduce_cluster_load_implementation(request=request, pause=True)
 
 
@@ -1247,6 +1250,7 @@ def reduce_cluster_load(request):
     Reduce the background cluster load to be 50% of what it is
 
     """
+    return
     reduce_cluster_load_implementation(request=request, pause=False)
 
 

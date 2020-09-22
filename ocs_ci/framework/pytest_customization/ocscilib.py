@@ -417,6 +417,7 @@ def pytest_collection_modifyitems(session, config, items):
     """
     Add Polarion ID property to test cases that are marked with one.
     """
+    log.info(f"Order of items is: {items}")
     for item in items:
         try:
             marker = item.get_closest_marker(name="polarion_id")

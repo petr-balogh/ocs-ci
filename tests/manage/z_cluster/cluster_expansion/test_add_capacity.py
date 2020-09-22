@@ -16,6 +16,10 @@ from ocs_ci.ocs.resources import storage_cluster
 from ocs_ci.utility.utils import ceph_health_check
 from ocs_ci.ocs.cluster import CephCluster
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def add_capacity_test():
     osd_size = storage_cluster.get_osd_size()
@@ -81,4 +85,6 @@ class TestAddCapacityPreUpgrade(ManageTest):
         """
         Test to add variable capacity to the OSD cluster while IOs running
         """
+        log.info("In test")
+        return
         add_capacity_test()

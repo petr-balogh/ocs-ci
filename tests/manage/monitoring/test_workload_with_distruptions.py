@@ -51,6 +51,8 @@ def test_workload_with_checksum(workload_storageutilization_checksum_rbd):
     """
     Purpose of this test is to have checksum workload fixture executed.
     """
+    logger.info("In test")
+    return 
     msg = "fio report should be available"
     assert workload_storageutilization_checksum_rbd['result'] is not None, msg
     fio = workload_storageutilization_checksum_rbd['result']['fio']
@@ -87,6 +89,8 @@ def test_workload_with_checksum_verify(
     stages of the cluster wide distruptions). We may need to come up with a way
     to track it and delete it when it's no longer needed though.
     """
+    logger.info("In test")
+    return 
     fixture_name = "workload_storageutilization_checksum_rbd"
     storage_class_name = "ocs-storagecluster-ceph-rbd"
     pv_label = f'fixture={fixture_name}'
