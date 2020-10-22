@@ -9,6 +9,7 @@ from uuid import uuid4
 import math
 
 from range_key_dict import RangeKeyDict
+from yaml.scanner import ScannerError
 
 from ocs_ci.utility.retry import retry
 from ocs_ci.utility.prometheus import PrometheusAPI
@@ -167,6 +168,7 @@ class ClusterLoad:
         logger.info(f"IOPS:{wrap_msg(msg)}")
         self.print_metrics()
 
+    @retry(ScannerError, tries=15, delay=5, backoff=1)
     def reach_cluster_load_percentage(self):
         """
         Reach the cluster limit and then drop to the given target percentage.

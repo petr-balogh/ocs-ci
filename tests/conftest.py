@@ -1154,75 +1154,87 @@ def cluster_load(
     io_in_bg = config.RUN.get('io_in_bg')
     log_utilization = config.RUN.get('log_utilization')
     io_load = config.RUN.get('io_load')
+    cluster_load_error = None
 
     # IO load should not happen during deployment
-    deployment_test = True if 'deployment' in request.node.items[0].location[0] else False
-    if io_in_bg and not deployment_test:
-        io_load = int(io_load) * 0.01
-        log.info(wrap_msg("Tests will be running while IO is in the background"))
-        log.info(
-            "Start running IO in the background. The amount of IO that "
-            "will be written is going to be determined by the cluster "
-            "capabilities according to its limit"
+    try:
+        deployment_test = True if (
+            'deployment' in request.node.items[0].location[0]
+        ) else False
+        if io_in_bg and not deployment_test:
+            io_load = int(io_load) * 0.01
+            log.info(wrap_msg("Tests will be running while IO is in the background"))
+            log.info(
+                "Start running IO in the background. The amount of IO that "
+                "will be written is going to be determined by the cluster "
+                "capabilities according to its limit"
+            )
+            cl_load_obj = ClusterLoad(
+                project_factory=project_factory_session,
+                sa_factory=service_account_factory_session,
+                pvc_factory=pvc_factory_session,
+                pod_factory=pod_factory_session,
+                target_percentage=io_load
+            )
+            cl_load_obj.reach_cluster_load_percentage()
+
+        if (log_utilization or io_in_bg) and not deployment_test:
+            if not cl_load_obj:
+                cl_load_obj = ClusterLoad()
+
+            config.RUN['load_status'] = 'running'
+
+            def finalizer():
+                """
+                Stop the thread that executed watch_load()
+                """
+                config.RUN['load_status'] = 'finished'
+                if thread:
+                    thread.join()
+                if cluster_load_error:
+                    raise cluster_load_error
+
+            request.addfinalizer(finalizer)
+
+            def watch_load():
+                """
+                Watch the cluster load by monitoring the cluster latency.
+                Print the cluster utilization metrics every 15 seconds.
+
+                If IOs are running in the test background, dynamically adjust
+                the IO load based on the cluster latency.
+
+                """
+                while config.RUN['load_status'] != 'finished':
+                    time.sleep(20)
+                    try:
+                        cl_load_obj.print_metrics(mute_logs=True)
+                        if io_in_bg:
+                            if config.RUN['load_status'] == 'running':
+                                cl_load_obj.adjust_load_if_needed()
+                            elif config.RUN['load_status'] == 'to_be_paused':
+                                cl_load_obj.reduce_load(pause=True)
+                                config.RUN['load_status'] = 'paused'
+                            elif config.RUN['load_status'] == 'to_be_reduced':
+                                cl_load_obj.reduce_load(pause=False)
+                                config.RUN['load_status'] = 'reduced'
+                            elif config.RUN['load_status'] == 'to_be_resumed':
+                                cl_load_obj.resume_load()
+                                config.RUN['load_status'] = 'running'
+
+                    # Any type of exception should be caught and we should continue.
+                    # We don't want any test to fail
+                    except Exception:
+                        continue
+
+            thread = threading.Thread(target=watch_load)
+            thread.start()
+    except Exception as ex:
+        log.error(
+            "Cluster might not work correctly during this run, because"
+            "cluster load failed with an exception: %s", ex
         )
-        cl_load_obj = ClusterLoad(
-            project_factory=project_factory_session,
-            sa_factory=service_account_factory_session,
-            pvc_factory=pvc_factory_session,
-            pod_factory=pod_factory_session,
-            target_percentage=io_load
-        )
-        cl_load_obj.reach_cluster_load_percentage()
-
-    if (log_utilization or io_in_bg) and not deployment_test:
-        if not cl_load_obj:
-            cl_load_obj = ClusterLoad()
-
-        config.RUN['load_status'] = 'running'
-
-        def finalizer():
-            """
-            Stop the thread that executed watch_load()
-            """
-            config.RUN['load_status'] = 'finished'
-            if thread:
-                thread.join()
-
-        request.addfinalizer(finalizer)
-
-        def watch_load():
-            """
-            Watch the cluster load by monitoring the cluster latency.
-            Print the cluster utilization metrics every 15 seconds.
-
-            If IOs are running in the test background, dynamically adjust
-            the IO load based on the cluster latency.
-
-            """
-            while config.RUN['load_status'] != 'finished':
-                time.sleep(20)
-                try:
-                    cl_load_obj.print_metrics(mute_logs=True)
-                    if io_in_bg:
-                        if config.RUN['load_status'] == 'running':
-                            cl_load_obj.adjust_load_if_needed()
-                        elif config.RUN['load_status'] == 'to_be_paused':
-                            cl_load_obj.reduce_load(pause=True)
-                            config.RUN['load_status'] = 'paused'
-                        elif config.RUN['load_status'] == 'to_be_reduced':
-                            cl_load_obj.reduce_load(pause=False)
-                            config.RUN['load_status'] = 'reduced'
-                        elif config.RUN['load_status'] == 'to_be_resumed':
-                            cl_load_obj.resume_load()
-                            config.RUN['load_status'] = 'running'
-
-                # Any type of exception should be caught and we should continue.
-                # We don't want any test to fail
-                except Exception:
-                    continue
-
-        thread = threading.Thread(target=watch_load)
-        thread.start()
+        cluster_load_error = ex
 
 
 def reduce_cluster_load_implementation(request, pause):
