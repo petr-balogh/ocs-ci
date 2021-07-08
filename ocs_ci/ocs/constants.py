@@ -535,6 +535,8 @@ TEMPLATE_IMAGE_CONTENT_SOURCE_POLICY_YAML = os.path.join(
     TEMPLATE_DEPLOYMENT_DIR, "imageContentSourcePolicy-template.yaml"
 )
 
+MULTUS_YAML = os.path.join(TEMPLATE_DEPLOYMENT_DIR, "multus.yaml")
+
 OPERATOR_SOURCE_NAME = "ocs-operatorsource"
 
 OPERATOR_SOURCE_SECRET_NAME = "ocs-operatorsource-secret"
@@ -1047,6 +1049,10 @@ NOOBAA_SERVICE_ACCOUNT = "system:serviceaccount:openshift-storage:noobaa"
 RGW_SERVICE_INTERNAL_MODE = "rook-ceph-rgw-ocs-storagecluster-cephobjectstore"
 RGW_SERVICE_EXTERNAL_MODE = "rook-ceph-rgw-ocs-external-storagecluster-cephobjectstore"
 
+# Routes
+RGW_DEFAULT_ROUTE_NAME = "ocs-storagecluster-cephobjectstore"
+RGW_EXTERNAL_ROUTE_NAME = "ocs-external-storagecluster-cephobjectstore"
+
 # Miscellaneous
 NOOBAA_OPERATOR_POD_CLI_PATH = "/usr/local/bin/noobaa-operator"
 NOOBAA_OPERATOR_LOCAL_CLI_PATH = os.path.join(DATA_DIR, "mcg-cli")
@@ -1283,6 +1289,7 @@ SQUADS = {
     "Magenta": ["/workloads/", "/registry/", "/logging/", "/flowtest/", "/lifecycle/"],
     "Grey": ["/performance/"],
     "Orange": ["/scale/"],
+    "Black": ["/ui/"],
 }
 
 PRODUCTION_JOBS_PREFIX = ["jnk"]

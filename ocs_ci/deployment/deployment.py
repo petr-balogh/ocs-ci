@@ -5,6 +5,7 @@ platforms like AWS, VMWare, Baremetal etc.
 
 from copy import deepcopy
 from semantic_version import Version
+import json
 import logging
 import tempfile
 import time
@@ -26,7 +27,6 @@ from ocs_ci.ocs.exceptions import (
     CommandFailed,
     ResourceWrongStatusException,
     UnavailableResourceException,
-    ExternalClusterDetailsException,
     UnsupportedFeatureError,
 )
 from ocs_ci.ocs.monitoring import (
@@ -49,6 +49,7 @@ from ocs_ci.ocs.resources.pod import (
 from ocs_ci.ocs.resources.storage_cluster import setup_ceph_debug
 from ocs_ci.ocs.uninstall import uninstall_ocs
 from ocs_ci.ocs.utils import setup_ceph_toolbox, collect_ocs_logs
+from ocs_ci.utility.deployment import create_external_secret
 from ocs_ci.utility.flexy import load_cluster_info
 from ocs_ci.utility import (
     templating,
@@ -416,6 +417,24 @@ class Deployment(object):
 
         logger.info("Creating namespace and operator group.")
         run_cmd(f"oc create -f {constants.OLM_YAML}")
+
+        # create multus network
+        if config.ENV_DATA.get("is_multus_enabled"):
+            logger.info("Creating multus network")
+            multus_data = templating.load_yaml(constants.MULTUS_YAML)
+            multus_config_str = multus_data["spec"]["config"]
+            multus_config_dct = json.loads(multus_config_str)
+            if config.ENV_DATA.get("multus_public_network_interface"):
+                multus_config_dct["master"] = config.ENV_DATA.get(
+                    "multus_public_network_interface"
+                )
+            multus_data["spec"]["config"] = json.dumps(multus_config_dct)
+            multus_data_yaml = tempfile.NamedTemporaryFile(
+                mode="w+", prefix="multus", delete=False
+            )
+            templating.dump_data_to_temp_yaml(multus_data, multus_data_yaml.name)
+            run_cmd(f"oc create -f {multus_data_yaml.name}")
+
         if config.ENV_DATA["platform"] == constants.IBMCLOUD_PLATFORM:
             ibmcloud.add_deployment_dependencies()
             if not live_deployment:
@@ -702,6 +721,11 @@ class Deployment(object):
             cluster_data["spec"]["managedResources"] = {
                 "cephConfig": {"reconcileStrategy": "ignore"}
             }
+        if config.ENV_DATA.get("is_multus_enabled"):
+            cluster_data["spec"]["network"] = {
+                "provider": "multus",
+                "selectors": {"public": "ocs-public"},
+            }
 
         cluster_data_yaml = tempfile.NamedTemporaryFile(
             mode="w+", prefix="cluster_storage", delete=False
@@ -754,19 +778,7 @@ class Deployment(object):
         csv.wait_for_phase("Succeeded", timeout=720)
 
         # Create secret for external cluster
-        secret_data = templating.load_yaml(constants.EXTERNAL_CLUSTER_SECRET_YAML)
-        external_cluster_details = config.EXTERNAL_MODE.get(
-            "external_cluster_details", ""
-        )
-        if not external_cluster_details:
-            raise ExternalClusterDetailsException("No external cluster data found")
-        secret_data["data"]["external_cluster_details"] = external_cluster_details
-        secret_data_yaml = tempfile.NamedTemporaryFile(
-            mode="w+", prefix="external_cluster_secret", delete=False
-        )
-        templating.dump_data_to_temp_yaml(secret_data, secret_data_yaml.name)
-        logger.info("Creating external cluster secret")
-        run_cmd(f"oc create -f {secret_data_yaml.name}")
+        create_external_secret()
 
         cluster_data = templating.load_yaml(constants.EXTERNAL_STORAGE_CLUSTER_YAML)
         cluster_data["metadata"]["name"] = config.ENV_DATA["storage_cluster_name"]
