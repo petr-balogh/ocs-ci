@@ -384,6 +384,13 @@ validation_4_8 = {
     ),
 }
 
+storageclass1 = {
+    "create_storageclass1": (
+        'button[data-test="item-create"]',
+        By.CSS_SELECTOR,
+    ),
+}
+
 locators = {
     "4.8": {
         "login": login,
@@ -397,6 +404,7 @@ locators = {
         "pvc": {**pvc, **pvc_4_7, **pvc_4_8},
         "infra": infra,
         "validation": {**validation, **validation_4_8},
+        "storageclass1": storageclass1,
     },
     "4.7": {
         "login": login,
