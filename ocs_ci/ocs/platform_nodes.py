@@ -15,18 +15,9 @@ from ocs_ci.deployment.vmware import (
     clone_openshift_installer,
     update_machine_conf,
 )
-from ocs_ci.ocs.exceptions import TimeoutExpiredError
+from ocs_ci.ocs.exceptions import TimeoutExpiredError, NotAllNodesCreated
 from ocs_ci.framework import config, merge_dict
-from ocs_ci.utility import (
-    aws,
-    vsphere,
-    templating,
-    baremetal,
-    azure_utils,
-    powernodes,
-    rhv,
-    ibmcloud,
-)
+from ocs_ci.utility import templating
 from ocs_ci.utility.csr import approve_pending_csr
 from ocs_ci.utility.load_balancer import LoadBalancer
 from ocs_ci.utility.retry import retry
@@ -62,7 +53,7 @@ from ocs_ci.utility.vsphere_nodes import VSPHERENode
 from paramiko.ssh_exception import NoValidConnectionsError, AuthenticationException
 from semantic_version import Version
 from ovirtsdk4.types import VmStatus
-from ocs_ci.utility.ibmcloud import login
+from ocs_ci.utility.ibmcloud import run_ibmcloud_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +188,8 @@ class VMWareNodes(NodesBase):
 
     def __init__(self):
         super(VMWareNodes, self).__init__()
+        from ocs_ci.utility import vsphere
+
         self.cluster_name = config.ENV_DATA.get("cluster_name")
         self.server = config.ENV_DATA["vsphere_server"]
         self.user = config.ENV_DATA["vsphere_user"]
@@ -394,7 +387,9 @@ class VMWareNodes(NodesBase):
         ]
         # Start the VMs
         if stopped_vms:
-            logger.info(f"The following VMs are powered off: {stopped_vms}")
+            logger.info(
+                f"The following VMs are powered off: {[vm.name for vm in stopped_vms]}"
+            )
             self.vsphere.start_vms(stopped_vms)
 
     def create_and_attach_nodes_to_cluster(self, node_conf, node_type, num_nodes):
@@ -424,7 +419,10 @@ class AWSNodes(NodesBase):
 
     def __init__(self):
         super(AWSNodes, self).__init__()
-        self.aws = aws.AWS()
+        from ocs_ci.utility import aws as aws_utility
+
+        self.aws_utility = aws_utility
+        self.aws = aws_utility.AWS()
         self.az = AZInfo()
 
     def get_ec2_instances(self, nodes):
@@ -438,7 +436,7 @@ class AWSNodes(NodesBase):
             dict: The EC2 instances dicts (IDs and names)
 
         """
-        return aws.get_instances_ids_and_names(nodes)
+        return self.aws_utility.get_instances_ids_and_names(nodes)
 
     def get_data_volumes(self):
         """
@@ -449,7 +447,7 @@ class AWSNodes(NodesBase):
 
         """
         pvs = get_deviceset_pvs()
-        return aws.get_data_volumes(pvs)
+        return self.aws_utility.get_data_volumes(pvs)
 
     def get_node_by_attached_volume(self, volume):
         """
@@ -1695,6 +1693,8 @@ class BaremetalNodes(NodesBase):
 
     def __init__(self):
         super(BaremetalNodes, self).__init__()
+        from ocs_ci.utility import baremetal
+
         self.baremetal = baremetal.BAREMETAL()
 
     def stop_nodes(self, nodes, force=True):
@@ -1809,6 +1809,8 @@ class IBMPowerNodes(NodesBase):
 
     def __init__(self):
         super(IBMPowerNodes, self).__init__()
+        from ocs_ci.utility import powernodes
+
         self.powernodes = powernodes.PowerNodes()
 
     def stop_nodes(self, nodes, force=True):
@@ -1922,6 +1924,8 @@ class AZURENodes(NodesBase):
 
     def __init__(self):
         super(AZURENodes, self).__init__()
+        from ocs_ci.utility import azure_utils
+
         self.azure = azure_utils.AZURE()
 
     def stop_nodes(self, nodes, timeout=540, wait=True, force=True):
@@ -2190,6 +2194,8 @@ class RHVNodes(NodesBase):
 
     def __init__(self):
         super(RHVNodes, self).__init__()
+        from ocs_ci.utility import rhv
+
         self.rhv = rhv.RHV()
 
     def get_rhv_vm_instances(self, nodes):
@@ -2335,7 +2341,9 @@ class RHVNodes(NodesBase):
 
         # Start the VMs
         if stopped_vms:
-            logger.info(f"The following VMs are powered off: {stopped_vms}")
+            logger.info(
+                f"The following VMs are powered off: {[vm.name for vm in stopped_vms]}"
+            )
             self.rhv.start_rhv_vms(stopped_vms)
 
 
@@ -2345,6 +2353,8 @@ class IBMCloud(NodesBase):
     """
 
     def __init__(self):
+        from ocs_ci.utility import ibmcloud
+
         super(IBMCloud, self).__init__()
         self.ibmcloud = ibmcloud.IBMCloud()
 
@@ -2400,7 +2410,6 @@ class IBMCloud(NodesBase):
 
         """
         logger.info("restarting nodes by stop and start teardown")
-        login()
         worker_nodes = get_nodes(node_type="worker")
         provider_id = worker_nodes[0].get()["spec"]["providerID"]
         cluster_id = provider_id.split("/")[5]
@@ -2418,5 +2427,129 @@ class IBMCloud(NodesBase):
         if len(worker_nodes_not_ready) > 0:
             for not_ready_node in worker_nodes_not_ready:
                 cmd = f"ibmcloud ks worker reboot --cluster {cluster_id} --worker {not_ready_node} -f"
-                out = run_cmd(cmd)
+                out = run_ibmcloud_cmd(cmd)
                 logger.info(f"Node restart command output: {out}")
+
+    def check_workers_ready_state(self, cmd):
+        """
+        Check if all worker nodes are in Ready state.
+
+        Args:
+            cmd (str): command to get the workers
+
+        Returns:
+            bool: 'True' if all the node names appeared in 'Ready'
+            else 'False'
+
+        """
+        logger.info("Getting all workers status")
+        out = run_ibmcloud_cmd(cmd)
+        worker_nodes = json.loads(out)
+        for worker_node in worker_nodes:
+            node_id = worker_node["id"]
+            logger.info(f"{node_id} status is : {worker_node['health']['message']}")
+            if worker_node["health"]["message"] != "Ready":
+                return False
+
+        return True
+
+    def create_nodes(self, node_conf, node_type, num_nodes):
+        """
+        Creates new node on IBM Cloud.
+
+        Args:
+            node_conf (dict): of node configuration
+            node_type (str): type of node to be created
+            num_nodes (int): Number of node instances to be created
+
+        Returns:
+           list: of IBMCloudNode objects
+
+        Raises:
+           NotAllNodesCreated: In case all nodes are not created
+           TimeoutExpiredError: In case node is not created in time
+
+        """
+        logger.info("creating new node")
+
+        worker_nodes = get_nodes(node_type="worker")
+        provider_id = worker_nodes[0].get()["spec"]["providerID"]
+        cluster_id = provider_id.split("/")[5]
+
+        cmd = f"ibmcloud ks worker-pool get --cluster {cluster_id} --worker-pool default --output json"
+        out = run_ibmcloud_cmd(cmd)
+        cluster_zones = json.loads(out)
+        workers_per_zone = cluster_zones["zones"][0]["workerCount"]
+        logger.info(f"workers_per_zone value is:{workers_per_zone}")
+
+        no_of_nodes = workers_per_zone + int(num_nodes)
+        logger.info(f"number of nodes going to be add in each zone are : {num_nodes}")
+
+        cmd = (
+            f"ibmcloud ks worker-pool resize --cluster {cluster_id} --worker-pool default"
+            f"  --size-per-zone {no_of_nodes}"
+        )
+        run_ibmcloud_cmd(cmd)
+
+        logger.info(
+            "Waiting for 60 seconds to execute above command to create new node"
+        )
+        time.sleep(60)
+
+        cmd = f"ibmcloud ks workers --cluster {cluster_id} --output json"
+        worker_nodes_not_ready = []
+
+        sample = TimeoutSampler(
+            timeout=1800,
+            sleep=3,
+            func=self.check_workers_ready_state,
+            cmd=cmd,
+        )
+
+        if not sample.wait_for_func_status(result=True):
+            logger.error("Failed to create nodes")
+            raise TimeoutExpiredError("Failed to create nodes")
+
+        cmd = f"ibmcloud ks workers --cluster {cluster_id} --output json"
+        out = run_ibmcloud_cmd(cmd)
+        worker_nodes = json.loads(out)
+
+        cmd = f"ibmcloud ks worker-pool zones --cluster {cluster_id} --worker-pool default --output json"
+        out = run_ibmcloud_cmd(cmd)
+        cluster_zones = json.loads(out)
+        workers_per_zone = cluster_zones["zones"]
+        no_of_zones = len(workers_per_zone)
+        total_no_of_nodes = no_of_nodes * no_of_zones
+        logger.info(f"total_no_nodes values is:{total_no_of_nodes}")
+
+        if len(worker_nodes) != total_no_of_nodes:
+            logger.info("Expected nodes are not created")
+            raise NotAllNodesCreated(
+                f"Expected number of nodes is {no_of_nodes} but created during deployment is {len(worker_nodes)}"
+            )
+
+        nodes_list = []
+        for worker_node in worker_nodes:
+            node_id = worker_node["id"]
+            if worker_node["health"]["message"] != "Ready":
+                worker_nodes_not_ready.append(node_id)
+            nodes_list.append(node_id)
+
+        if len(worker_nodes_not_ready) > 0:
+            logger.info("Expected nodes are not created")
+            raise NotAllNodesCreated("Nodes are not created successfully")
+        return nodes_list
+
+    def create_and_attach_nodes_to_cluster(self, node_conf, node_type, num_nodes):
+        """
+        Create nodes and attach them to cluster
+        Use this function if you want to do both creation/attachment in
+        a single call
+
+        Args:
+            node_conf (dict): of node configuration
+            node_type (str): type of node to be created
+            num_nodes (int): Number of node instances to be created
+
+        """
+        self.create_nodes(node_conf, node_type, num_nodes)

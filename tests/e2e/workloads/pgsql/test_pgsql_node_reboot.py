@@ -12,7 +12,6 @@ from ocs_ci.ocs.node import (
     get_node_resource_utilization_from_adm_top,
 )
 
-
 log = logging.getLogger(__name__)
 
 
@@ -41,7 +40,7 @@ class TestPgSQLNodeReboot(E2ETest):
         PGSQL test setup
         """
         # Deployment of postgres database
-        pgsql.setup_postgresql(replicas=3)
+        pgsql.setup_postgresql(replicas=1)
 
         # Initialize Sanity instance
         self.sanity_helpers = Sanity()
@@ -49,8 +48,7 @@ class TestPgSQLNodeReboot(E2ETest):
     @pytest.mark.parametrize(
         argnames=["transactions", "pod_name"],
         argvalues=[
-            pytest.param(*[600, "osd"], marks=pytest.mark.polarion_id("OCS-801")),
-            pytest.param(*[600, "postgres"], marks=pytest.mark.polarion_id("OCS-799")),
+            pytest.param(*[600, "osd"], marks=pytest.mark.polarion_id("OCS-801"))
         ],
     )
     @pytest.mark.usefixtures(pgsql_setup.__name__)
@@ -59,7 +57,7 @@ class TestPgSQLNodeReboot(E2ETest):
         Test pgsql workload
         """
         # Create pgbench benchmark
-        pgsql.create_pgbench_benchmark(replicas=3, transactions=transactions, clients=3)
+        pgsql.create_pgbench_benchmark(replicas=1, transactions=transactions)
 
         # Start measuring time
         start_time = datetime.now()
@@ -67,12 +65,12 @@ class TestPgSQLNodeReboot(E2ETest):
         # Wait for pgbench pod to reach running state
         pgsql.wait_for_pgbench_status(status=constants.STATUS_RUNNING)
 
-        # Choose a node based on pod it contains
-        if pod_name == "postgres":
-            node_list = pgsql.get_pgsql_nodes()
-        elif pod_name == "osd":
-            node_list = get_osd_running_nodes()
+        # Select a node where pgbench is not running and reboot
+        osd_nodes_list = get_osd_running_nodes()
+        node_list = pgsql.filter_pgbench_nodes_from_nodeslist(osd_nodes_list)
+
         node_1 = get_node_objs(node_list[random.randint(0, len(node_list) - 1)])
+        log.info(f"Selected node {node_1} for reboot operation")
 
         # Check worker node utilization (adm_top)
         get_node_resource_utilization_from_adm_top(node_type="worker", print_table=True)
