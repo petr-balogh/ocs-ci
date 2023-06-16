@@ -59,8 +59,20 @@ def create_configmap_cluster_monitoring_pod(sc_name=None, telemeter_server_url=N
         config["telemeterClient"]["telemeterServerURL"] = telemeter_server_url
     config = yaml.dump(config)
     config_map["data"]["config.yaml"] = config
-    assert helpers.create_resource(**config_map)
     ocp = OCP("v1", "ConfigMap", defaults.OCS_MONITORING_NAMESPACE)
+    if (
+        config.ENV_DATA["platform"].lower() == constants.AZURE_PLATFORM
+        and config.ENV_DATA["deployment_type"] == "managed"
+    ):
+        try:
+            assert ocp.get(resource_name="cluster-monitoring-config")
+            logger.info(
+                "For Azure ARO cluster the cluster-monitoring-config exists and will be deleted and created!"
+            )
+            ocp.delete(resource_name="cluster-monitoring-config")
+        except CommandFailed:
+            pass
+    assert helpers.create_resource(**config_map)
     assert ocp.get(resource_name="cluster-monitoring-config")
     logger.info("Successfully created configmap cluster-monitoring-config")
 
