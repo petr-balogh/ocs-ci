@@ -354,19 +354,10 @@ def configure_ingress_and_api_certificates(skip_tls_verify=False):
         skip_tls_verify (bool): True if allow skipping TLS verification
 
     """
-<<<<<<< HEAD
     configure_custom_ingress_cert(skip_tls_verify, wait_for_machineconfigpool=False)
     configure_custom_api_cert(skip_tls_verify, wait_for_machineconfigpool=False)
     wait_for_machineconfigpool_status(
         "all", timeout=3600, skip_tls_verify=skip_tls_verify
-=======
-    configure_custom_ingress_cert(
-        skip_tls_verify, wait_for_machineconfigpool_status=False
-    )
-    configure_custom_api_cert(skip_tls_verify, wait_for_machineconfigpool_status=False)
-    wait_for_machineconfigpool_status(
-        "all", timeout=1800, skip_tls_verify=skip_tls_verify
->>>>>>> 6577a4532 (Azure ARO deployment)
     )
 
 
