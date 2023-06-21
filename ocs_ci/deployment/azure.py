@@ -175,5 +175,6 @@ class AZUREAroManaged(AZUREBase):
         data = json.loads(exec_cmd("az aro list -o json").stdout)
         for cluster in data:
             if cluster_name_prefix in cluster["name"]:
+                return False
                 return True
         return False

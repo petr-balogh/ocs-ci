@@ -30,7 +30,8 @@ from ocs_ci.utility.utils import (
     exec_cmd,
     TimeoutSampler,
 )
-from ocs_ci.utility.ssl_certs import configure_ingress_and_api_certificates
+
+# from ocs_ci.utility.ssl_certs import configure_ingress_and_api_certificates
 
 logger = logging.getLogger(name=__file__)
 
@@ -560,7 +561,7 @@ class AzureAroUtil(AZURE):
         worker_subnet = config.ENV_DATA.get("aro_worker_subnet", "worker-subnet")
         pull_secret_path = os.path.join(constants.DATA_DIR, "pull-secret")
         base_domain = config.ENV_DATA["base_domain"]
-        self.create_network()
+        # self.create_network()
         cmd = (
             f"az aro create --resource-group {resource_group} --cluster-resource-group {cluster_resource_group} "
             f"--name {cluster_name} --version {ocp_version} --vnet {vnet} --master-subnet {master_subnet} "
@@ -568,10 +569,10 @@ class AzureAroUtil(AZURE):
             f"--worker-vm-size {worker_flavor} --master-vm-size {master_flavor}  "
             f"--worker-count {worker_replicas} --domain {cluster_name}.{base_domain}"
         )
-        logger.info("Creating Azure ARO cluster.")
-        out = exec_cmd(cmd, timeout=3600).stdout
-        self.set_dns_records(cluster_name, resource_group, base_domain)
-        logger.info(f"Cluster deployed: {out}")
+        logger.info(f"Creating Azure ARO cluster {cmd}.")
+        # out = exec_cmd(cmd, timeout=3600).stdout
+        # self.set_dns_records(cluster_name, resource_group, base_domain)
+        # logger.info(f"Cluster deployed: {out}")
         cluster_info = self.get_cluster_details(cluster_name)
         # Create metadata file to store the cluster name
         cluster_info["clusterName"] = cluster_name
@@ -597,7 +598,7 @@ class AzureAroUtil(AZURE):
             )
         self.get_kubeconfig(cluster_name, resource_group)
         self.write_kubeadmin_password(cluster_name, resource_group)
-        configure_ingress_and_api_certificates(skip_tls_verify=True)
+        # configure_ingress_and_api_certificates(skip_tls_verify=True)
         attempts = 0
         maximum_attempts = 100
         successful_connections = 0
