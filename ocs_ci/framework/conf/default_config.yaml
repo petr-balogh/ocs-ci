@@ -67,7 +67,7 @@ DEPLOYMENT:
   ocs_operator_nodes_to_taint: 0
   ssh_key: "~/.ssh/openshift-dev.pub"
   ssh_key_private: "~/.ssh/openshift-dev.pem"
-  force_deploy_multiple_clusters: False
+  force_deploy_multiple_clusters: true
   # If you deploy for development purpose on cluster with lower then minimum
   # requirements, the value of option below needs to be set to true.
   allow_lower_instance_requirements: false

@@ -41,6 +41,8 @@ from ocs_ci.utility.utils import (
 from semantic_version import Version
 from .cloud import CloudDeploymentBase
 from .cloud import IPIOCPDeployment
+
+# from .cloud import IPIOCPDeployment
 from .flexy import FlexyAWSUPI
 
 logger = logging.getLogger(__name__)
@@ -186,7 +188,18 @@ class AWSIPI(AWSBase):
     A class to handle AWS IPI specific deployment
     """
 
-    OCPDeployment = IPIOCPDeployment
+    class OCPDeployment(IPIOCPDeployment):
+        def __init__(self):
+            super(AWSIPI.OCPDeployment, self).__init__()
+
+        def deploy_prereq(self):
+            """
+            Overriding deploy_prereq from parent. Perform all necessary
+            prerequisites for AWSUPI here.
+            """
+            super(AWSIPI.OCPDeployment, self).deploy_prereq()
+            # Do updates here
+            pass
 
     def __init__(self):
         self.name = self.__class__.__name__
