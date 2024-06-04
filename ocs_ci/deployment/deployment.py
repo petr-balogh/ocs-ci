@@ -152,6 +152,24 @@ from ocs_ci.deployment.cnv import CNVInstaller
 logger = logging.getLogger(__name__)
 
 
+def wait_for_file(file_path="/tmp/continue", sleep=10):
+    """
+    Waits for the specified file to exist, then removes it.
+
+    Args:
+        file_path (str): The path to the file to check for.
+        sleep (int): Sleep time between attempts.
+    """
+    # Loop until the file exists
+    while not os.path.exists(file_path):
+        logger.info(f"Waiting for {file_path} to be created...")
+        time.sleep(sleep)
+
+    logger.info(f"{file_path} exists. Proceeding with the rest of the code.")
+    os.remove(file_path)
+    logger.debug(f"{file_path} has been removed.")
+
+
 class Deployment(object):
     """
     Base for all deployment platforms
@@ -1529,7 +1547,10 @@ class Deployment(object):
             mode="w+", prefix="cluster_storage", delete=False
         )
         templating.dump_data_to_temp_yaml(cluster_data, cluster_data_yaml.name)
-        run_cmd(f"oc create -f {cluster_data_yaml.name}", timeout=1200)
+        logger.info(f"cluster yaml data file is: \n{cluster_data_yaml.name}")
+        logger.error("Intentionally not creating for let you to ")
+        wait_for_file()
+        # run_cmd(f"oc create -f {cluster_data_yaml.name}", timeout=1200)
         if config.DEPLOYMENT["infra_nodes"]:
             _ocp = ocp.OCP(kind="node")
             _ocp.exec_oc_cmd(
