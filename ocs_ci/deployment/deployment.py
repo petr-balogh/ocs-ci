@@ -2494,7 +2494,8 @@ class Deployment(object):
         for key, value in env_vars.items():
             if value:
                 os.environ[key] = value
-
+        kubeconfig_location = os.path.join(self.cluster_path, "auth", "kubeconfig")
+        env_vars["KUBECONFIG"] = kubeconfig_location
         logger.info("Writing pull-secret")
         _templating = templating.Templating(
             os.path.join(constants.TEMPLATE_DIR, "acm-deployment")
@@ -2532,6 +2533,7 @@ class Deployment(object):
             stdout=PIPE,
             stderr=PIPE,
             encoding="utf-8",
+            env=env_vars,
         )
         stdout, stderr = proc.communicate()
         logger.info(stdout)
