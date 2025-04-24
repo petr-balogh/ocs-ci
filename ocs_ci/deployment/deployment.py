@@ -2525,8 +2525,9 @@ class Deployment(object):
             f.write(image_tag)
 
         logger.info("Running open-cluster-management deploy")
-        cmd = ["./start.sh", "--silent"]
+        cmd = ["./start.sh"]
         logger.info("Running cmd: %s", " ".join(cmd))
+        logger.info(f"env_vars: {env_vars}")
         proc = Popen(
             cmd,
             cwd=acm_hub_deploy_dir,
