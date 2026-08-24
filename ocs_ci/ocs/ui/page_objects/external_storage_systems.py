@@ -238,12 +238,9 @@ class ExternalSystems(ResourceList):
     def connect_scale_filesystem(self, scale_name, filesystem_name):
         """
         Connect an additional scale filesystem
-
-        Args:
-            scale_name (str): name of the scale cluster
-            filesystem_name (str): name of the additional filesystem
         """
         logger.info(f"Filtering connections to find {scale_name}")
+        self.wait_for_element_to_be_visible(self.external_systems["filter"], timeout=15)
         self.do_clear(self.external_systems["filter"])
         self.do_send_keys(self.external_systems["filter"], scale_name)
         self.do_click(locator=self.external_systems["actions_button"])
@@ -254,21 +251,49 @@ class ExternalSystems(ResourceList):
         )
         self.do_click(locator=self.external_systems["add_button"])
 
+        # Handle modal errors (e.g. filesystem already existing)
+        cancel_button = ("//button[contains(text(), 'Cancel')]", "xpath")
+        if self.get_elements(cancel_button):
+            logger.warning(
+                "Filesystem creation returned an error modal; dismissing modal"
+            )
+            self.do_click(cancel_button)
+
+        self.page_has_loaded(retries=10)
+
     def delete_scale_filesystem(self, scale_name, filesystem_name):
         """
         Delete a scale filesystem
-
-        Args:
-            scale_name (str): name of the scale cluster
-            filesystem_name (str): name of the  filesystem
         """
         logger.info(f"Filtering connections to find {scale_name}")
-        self.do_clear(self.external_systems["filter"])
+
+        # Ensure modal overlay is dismissed and navigate back to list view if needed
+        cancel_button = ("//button[contains(text(), 'Cancel')]", "xpath")
+        if self.get_elements(cancel_button):
+            self.do_click(cancel_button)
+
+        if (
+            "/odf/external-systems" not in self.driver.current_url
+            or "scale.spectrum.ibm.com" in self.driver.current_url
+        ):
+            from ocs_ci.ocs.ui.page_objects.page_navigator import PageNavigator
+
+            PageNavigator().nav_external_systems_page()
+
         wait_for_element_to_be_clickable(self.external_systems["filter"])
+
+        self.do_clear(self.external_systems["filter"])
         self.do_send_keys(self.external_systems["filter"], scale_name)
+
+        resource_locator = (
+            f"//td[@data-label='Name']//a[normalize-space()='{scale_name}'] | "
+            f"//a[normalize-space()='{scale_name}']",
+            "xpath",
+        )
         logger.info(f"Clicking on {scale_name} to go to Scale dashboard")
-        wait_for_element_to_be_clickable(self.external_systems["scale_dashboard_link"])
-        self.do_click(self.external_systems["scale_dashboard_link"])
+        wait_for_element_to_be_clickable(resource_locator)
+        self.do_click(resource_locator)
+
         logger.info(f"Clicking on {filesystem_name}")
         self.do_click(
             format_locator(self.external_systems["filesystem_link"], filesystem_name)
