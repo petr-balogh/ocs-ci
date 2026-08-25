@@ -1,27 +1,22 @@
-from ocs_ci.ocs import constants
+from selenium.common.exceptions import TimeoutException
+from ocs_ci.ocs import constants, ocp
+from ocs_ci.ocs.exceptions import CommandFailed
 from ocs_ci.ocs.ui.base_ui import logger, wait_for_element_to_be_clickable
+from ocs_ci.ocs.ui.helpers_ui import format_locator
 from ocs_ci.ocs.ui.page_objects.block_and_file import BlockAndFile
 from ocs_ci.ocs.ui.page_objects.data_foundation_tabs_common import (
     DataFoundationDefaultTab,
 )
 from ocs_ci.ocs.ui.page_objects.resource_list import ResourceList
-from ocs_ci.ocs.ui.helpers_ui import format_locator
-from ocs_ci.ocs import ocp
-from selenium.common.exceptions import TimeoutException
 
 
 class ExternalSystems(ResourceList):
     """
     UI representation of External Systems page - a resource list of External Storage Cluster(s)
-    1. Navigation: PageNavigator (Storage) / Data Foundation Overview / External Systems
-    2. Navigation: PageNavigator (Storage) / External Systems
-
-    Possible actions via kebab menu per resource: edit labels, edit annotations, Edit storage system
-    Possible to navigate to a resource page via name link
     """
 
     def __init__(self):
-        ResourceList.__init__(self)
+        super().__init__()
 
     def nav_to_external_storage_cluster(
         self, esc_name=constants.DEFAULT_CLUSTERNAME_EXTERNAL_MODE
@@ -129,8 +124,8 @@ class ExternalSystems(ResourceList):
         self.do_click(locator=self.external_systems["connect_flash"])
         self.do_click(locator=self.external_systems["next_button"])
         logger.info("Fill in the required fields")
-        self.do_send_keys(self.external_systems[""], ip_address)
-        self.do_click(locator=self.external_systems[""])
+        self.do_send_keys(self.external_systems["ip_address_input"], ip_address)
+        self.do_click(locator=self.external_systems["next_button"])
 
     def connect_scale(
         self,
@@ -195,7 +190,7 @@ class ExternalSystems(ResourceList):
             logger.info(f"{scale_name} not found on External Systems page")
             return False
 
-    def disconnect_scale(self, scale_name):
+    def disconnect_scale(self, scale_name, filesystem_name):
         """
         Removing a connection to scale is going to be possible in UI
         but now it's only done via CLI
@@ -206,7 +201,11 @@ class ExternalSystems(ResourceList):
         delete_secret_cmd = (
             f"delete secret {scale_name}-user-details-secret -n ibm-spectrum-scale"
         )
+        delete_file_system = (
+            f"delete filesystem {scale_name}-{filesystem_name} -n ibm-spectrum-scale"
+        )
         ocp.OCP().exec_oc_cmd(delete_secret_cmd)
+        ocp.OCP().exec_oc_cmd(delete_file_system)
 
     def scale_status_ok(self, scale_name):
         """
@@ -231,9 +230,7 @@ class ExternalSystems(ResourceList):
             locator=self.external_systems["scale_connection_health"]
         )
         logger.info(f"Scale connection status: {connection_status}")
-        if operator_status == "Healthy" and connection_status == "Healthy":
-            return True
-        return False
+        return operator_status == "Healthy" and connection_status == "Healthy"
 
     def connect_scale_filesystem(self, scale_name, filesystem_name):
         """
@@ -251,26 +248,28 @@ class ExternalSystems(ResourceList):
         )
         self.do_click(locator=self.external_systems["add_button"])
 
-        # Handle modal errors (e.g. filesystem already existing)
-        cancel_button = ("//button[contains(text(), 'Cancel')]", "xpath")
-        if self.get_elements(cancel_button):
-            logger.warning(
-                "Filesystem creation returned an error modal; dismissing modal"
+        # Check specifically if an error alert popped up inside the modal
+        if self.get_elements(self.external_systems["modal_error_alert"]):
+            error_msg = self.get_element_text(
+                self.external_systems["modal_error_alert"]
             )
-            self.do_click(cancel_button)
+            logger.warning(
+                f"Filesystem creation returned an error modal: {error_msg}; dismissing modal"
+            )
+            if self.get_elements(self.external_systems["modal_cancel_button"]):
+                self.do_click(self.external_systems["modal_cancel_button"])
+            raise CommandFailed(
+                f"Failed to add scale filesystem '{filesystem_name}': {error_msg}"
+            )
 
         self.page_has_loaded(retries=10)
 
     def delete_scale_filesystem(self, scale_name, filesystem_name):
-        """
-        Delete a scale filesystem
-        """
         logger.info(f"Filtering connections to find {scale_name}")
 
-        # Ensure modal overlay is dismissed and navigate back to list view if needed
-        cancel_button = ("//button[contains(text(), 'Cancel')]", "xpath")
-        if self.get_elements(cancel_button):
-            self.do_click(cancel_button)
+        # Ensure modal overlay is dismissed if present using stored locator
+        if self.get_elements(self.external_systems["modal_cancel_button"]):
+            self.do_click(self.external_systems["modal_cancel_button"])
 
         if (
             "/odf/external-systems" not in self.driver.current_url
@@ -285,10 +284,9 @@ class ExternalSystems(ResourceList):
         self.do_clear(self.external_systems["filter"])
         self.do_send_keys(self.external_systems["filter"], scale_name)
 
-        resource_locator = (
-            f"//td[@data-label='Name']//a[normalize-space()='{scale_name}'] | "
-            f"//a[normalize-space()='{scale_name}']",
-            "xpath",
+        # Stored views.py locator formatted without '|' OR-operator
+        resource_locator = format_locator(
+            self.external_systems["scale_connection_name_link"], scale_name
         )
         logger.info(f"Clicking on {scale_name} to go to Scale dashboard")
         wait_for_element_to_be_clickable(resource_locator)
@@ -324,5 +322,4 @@ class ExternalStorageCluster(DataFoundationDefaultTab, BlockAndFile):
         is_default = self.is_block_and_file_tab()
         if not is_default:
             logger.warning("Block and File tab is not active")
-
         return is_default

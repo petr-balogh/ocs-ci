@@ -7676,6 +7676,15 @@ def delete_cephfs_ec_pool(pool_name):
 def create_custom_secret_for_cnsa_rm(name, namespace, data_dict, secret_type="Opaque"):
     """
     Helper to create a Kubernetes Secret using OCP class and temporary YAML files.
+
+    Args:
+        name (str): Name of the Secret
+        namespace (str): Namespace in which the Secret is created
+        data_dict (dict): Mapping of Secret keys to values
+        secret_type (str): Kubernetes Secret type
+
+    Returns:
+        dict: Result of the Secret creation
     """
     encoded_data = {}
     for k, v in data_dict.items():
@@ -7691,7 +7700,7 @@ def create_custom_secret_for_cnsa_rm(name, namespace, data_dict, secret_type="Op
     }
     fd, temp_path = tempfile.mkstemp(suffix=".yaml")
     try:
-        dump_data_to_temp_yaml(manifest, temp_path)
+        dump_data_to_temp_yaml(manifest, temp_path, log=False)
         secret_ocp = OCP(kind="Secret", namespace=namespace)
         return secret_ocp.create(yaml_file=temp_path)
     finally:
@@ -7701,48 +7710,38 @@ def create_custom_secret_for_cnsa_rm(name, namespace, data_dict, secret_type="Op
 
 
 def setup_scale_cluster_infrastructure_for_cnsa_rm(
-    request, namespace=constants.IBM_STORAGE_SCALE_NAMESPACE
+    namespace=constants.IBM_STORAGE_SCALE_NAMESPACE,
+    tracked_resources=None,
 ):
     """
     Deploys core Scale operator (MCO), Entitlement key, and local IBM Scale Cluster CR.
-    Registers a finalizer on the request fixture to guarantee proper resource scrubbing on teardown.
+
+    Args:
+        namespace (str): Target namespace
+        tracked_resources (list): Optional list to record created resources for cleanup
     """
     logger.info("--- Setup: IBM Storage Scale Infrastructure ---")
+
+    # Validate required AUTH parameters early before mutating cluster state
+    ent_key = config.AUTH.get("ibm_entitlement_key")
+    if not ent_key:
+        pytest.skip("ibm_entitlement_key not configured in config.AUTH")
+
+    host_aliases = config.AUTH.get("scale_host_aliases")
+    if not host_aliases:
+        pytest.skip("scale_host_aliases not configured in config.AUTH")
+
     cluster_name = "ibm-spectrum-scale"
 
-    def finalizer_cleanup():
-        logger.info("--- Cleanup: IBM Storage Scale Infrastructure ---")
-        for kind in ["Filesystem", "RemoteCluster", "Cluster"]:
-            ocp_obj = OCP(kind=f"{kind}.scale.spectrum.ibm.com", namespace=namespace)
-            try:
-                items = ocp_obj.get().get("items", [])
-            except exceptions.CommandFailed as e:
-                logger.warning(f"Could not list custom resources for kind {kind}: {e}")
-                continue
-
-            for res in items:
-                res_name = res["metadata"]["name"]
-                if "scale-test" in res_name or res_name == cluster_name:
-                    try:
-                        logger.info(f"Scrubbing {kind}: {res_name}")
-                        exec_cmd(
-                            f"oc patch {kind.lower()}.scale.spectrum.ibm.com {res_name} -n {namespace}"
-                            f' --type=merge -p \'{{"metadata":{{"finalizers":null}}}}\''
-                        )
-                        ocp_obj.delete(resource_name=res_name)
-                    except exceptions.CommandFailed as e:
-                        logger.warning(
-                            f"Teardown cleanup failed for {kind} '{res_name}': {e}"
-                        )
-
-    request.addfinalizer(finalizer_cleanup)
-
-    # 1. Apply MCO (Operator)
+    # 1. Apply MCO (Operator) using pinned commit URL
     mco_url = (
         "https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/"
-        "v6.0.0.x/generated/scale/mco/mco.yaml"
+        "502fbcbe968651d2c94bd6b8419958c835383696/generated/scale/mco/mco.yaml"
     )
-    helpers.run_cmd(f"oc apply -f {mco_url}")
+    try:
+        exec_cmd(f"oc apply -f {mco_url}")
+    except CommandFailed as e:
+        raise CommandFailed(f"Scale operator deployment failed: {e}") from e
 
     # 2. Check and Create Entitlement Secret
     secret_name = "ibm-entitlement-key"
@@ -7752,10 +7751,6 @@ def setup_scale_cluster_infrastructure_for_cnsa_rm(
         logger.info(f"Secret '{secret_name}' already exists.")
     except exceptions.CommandFailed:
         logger.info(f"Secret '{secret_name}' not found. Creating...")
-        ent_key = config.AUTH.get("ibm_entitlement_key")
-        if not ent_key:
-            pytest.fail("ibm_entitlement_key not found in config.AUTH")
-
         auth_b64 = base64.b64encode(f"cp:{ent_key}".encode()).decode()
         docker_config = {
             "auths": {
@@ -7772,6 +7767,8 @@ def setup_scale_cluster_infrastructure_for_cnsa_rm(
             data_dict={".dockerconfigjson": docker_config},
             secret_type="kubernetes.io/dockerconfigjson",
         )
+        if tracked_resources is not None:
+            tracked_resources.append(("Secret", secret_name, namespace))
 
     # 3. Create Cluster CR
     scale_cluster_kind = "Cluster.scale.spectrum.ibm.com"
@@ -7782,10 +7779,6 @@ def setup_scale_cluster_infrastructure_for_cnsa_rm(
         logger.info(f"Scale Cluster CR '{cluster_name}' already exists.")
     except exceptions.CommandFailed:
         logger.info(f"Creating local IBM Scale Cluster CR '{cluster_name}'...")
-        host_aliases = config.AUTH.get("scale_host_aliases")
-        if not host_aliases:
-            pytest.skip("scale_host_aliases not configured in AUTH")
-
         cluster_manifest = {
             "apiVersion": "scale.spectrum.ibm.com/v1beta1",
             "kind": "Cluster",
@@ -7806,6 +7799,8 @@ def setup_scale_cluster_infrastructure_for_cnsa_rm(
             os.close(fd)
             dump_data_to_temp_yaml(cluster_manifest, temp_path)
             exec_cmd(f"oc create -f {temp_path}")
+            if tracked_resources is not None:
+                tracked_resources.append(("Cluster.scale.spectrum.ibm.com", cluster_name, namespace))
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -7813,11 +7808,19 @@ def setup_scale_cluster_infrastructure_for_cnsa_rm(
 
 
 def setup_scale_remote_connection(
-    request, rc_name, user_secret_name, namespace=constants.IBM_STORAGE_SCALE_NAMESPACE
+    rc_name,
+    user_secret_name,
+    namespace=constants.IBM_STORAGE_SCALE_NAMESPACE,
+    tracked_resources=None,
 ):
     """
     Creates authentication secrets and RemoteCluster resource, then waits for it to reach Ready state.
-    Registers teardown handlers to clean up secrets upon test completion.
+
+    Args:
+        rc_name (str): RemoteCluster name
+        user_secret_name (str): Secret name for user details
+        namespace (str): Target namespace
+        tracked_resources (list): Optional tracking handle for cleanup
     """
     gui_user = config.AUTH.get("scale_gui_user")
     gui_password = config.AUTH.get("scale_gui_password")
@@ -7828,17 +7831,6 @@ def setup_scale_remote_connection(
     if not gui_hosts:
         pytest.skip("scale_gui_hosts target endpoint mapping not configured.")
 
-    def finalizer_secret_cleanup():
-        logger.info(f"Scrubbing user details secret: {user_secret_name}")
-        try:
-            exec_cmd(
-                f"oc delete secret {user_secret_name} -n {namespace} --ignore-not-found"
-            )
-        except exceptions.CommandFailed as e:
-            logger.warning(f"User details secret deletion failed: {e}")
-
-    request.addfinalizer(finalizer_secret_cleanup)
-
     create_custom_secret_for_cnsa_rm(
         name=user_secret_name,
         namespace=namespace,
@@ -7847,6 +7839,8 @@ def setup_scale_remote_connection(
             "password": gui_password,
         },
     )
+    if tracked_resources is not None:
+        tracked_resources.append(("Secret", user_secret_name, namespace))
 
     rc_data = {
         "apiVersion": "scale.spectrum.ibm.com/v1beta1",
@@ -7868,6 +7862,8 @@ def setup_scale_remote_connection(
         os.close(fd)
         dump_data_to_temp_yaml(rc_data, temp_path)
         exec_cmd(f"oc create -f {temp_path}")
+        if tracked_resources is not None:
+            tracked_resources.append(("RemoteCluster.scale.spectrum.ibm.com", rc_name, namespace))
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)

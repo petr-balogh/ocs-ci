@@ -4,22 +4,23 @@ import tempfile
 import pytest
 
 from ocs_ci.framework.pytest_customization.marks import (
-    orange_squad,
-    fdf_required,
-    skipif_ocs_version,
     cnsa_remote_mount,
+    fdf_required,
+    orange_squad,
+    skipif_ocs_version,
 )
 from ocs_ci.framework.testlib import ManageTest, tier1
-from ocs_ci.ocs import constants
 from ocs_ci.helpers import helpers
 from ocs_ci.helpers.helpers import (
     setup_scale_cluster_infrastructure_for_cnsa_rm,
     setup_scale_remote_connection,
 )
+from ocs_ci.ocs import constants
+from ocs_ci.ocs.exceptions import CommandFailed, TimeoutExpiredError
 from ocs_ci.ocs.resources.ocs import OCP, OCS
-from ocs_ci.utility.utils import TimeoutSampler, exec_cmd
-from ocs_ci.utility.templating import dump_data_to_temp_yaml
 from ocs_ci.ocs.resources.pod import Pod
+from ocs_ci.utility.templating import dump_data_to_temp_yaml
+from ocs_ci.utility.utils import TimeoutSampler, exec_cmd
 
 log = logging.getLogger(__name__)
 
@@ -29,13 +30,13 @@ log = logging.getLogger(__name__)
 @skipif_ocs_version("<4.21")
 @cnsa_remote_mount
 class TestMultiStorageCoexistence(ManageTest):
+
     @pytest.fixture(autouse=True)
     def setup_scale_infrastructure(self, request):
         """
         Infrastructure Setup: MCO, Entitlement, Cluster CR, and Pod Health Check.
-        Uses addfinalizer via helpers to guarantee execution tracking even on early failures.
+        Registers tracked resources for clean finalizer scrubbing.
         """
-        # Set up dynamic resource names
         sc_name = helpers.create_unique_resource_name("scale-test", "sc")
         rc_name = helpers.create_unique_resource_name("scale-test", "rc")
         user_secret_name = f"{rc_name}-user-details-secret"
@@ -44,17 +45,33 @@ class TestMultiStorageCoexistence(ManageTest):
         self.rc_name = rc_name
         self.user_secret_name = user_secret_name
 
-        def finalizer_sc_cleanup():
-            log.info(f"Scrubbing manual StorageClass: {sc_name}")
+        tracked_resources = []
+
+        def finalizer_cleanup():
+            log.info("--- Cleanup: Scale Test Resources ---")
+            for kind, name, ns in reversed(tracked_resources):
+                try:
+                    log.info(f"Scrubbing {kind}: {name} in {ns}")
+                    exec_cmd(
+                        f'oc patch {kind} {name} -n {ns} --type=merge -p \'{{"metadata":{{"finalizers":null}}}}\'',
+                        ignore_error=True,
+                    )
+                    exec_cmd(f"oc delete {kind} {name} -n {ns} --ignore-not-found")
+                except (CommandFailed, TimeoutExpiredError) as e:
+                    log.warning(f"Cleanup warning for {kind} '{name}': {e}")
+
             try:
+                log.info(f"Scrubbing StorageClass: {sc_name}")
                 exec_cmd(f"oc delete storageclass {sc_name} --ignore-not-found")
-            except Exception as e:
-                log.warning(f"StorageClass deletion skipped or failed: {e}")
+            except (CommandFailed, TimeoutExpiredError) as e:
+                log.warning(f"StorageClass deletion failed: {e}")
 
-        request.addfinalizer(finalizer_sc_cleanup)
+        request.addfinalizer(finalizer_cleanup)
 
-        # Deploy scale cluster infrastructure
-        setup_scale_cluster_infrastructure_for_cnsa_rm(request)
+        # Deploy scale infrastructure without passing 'request'
+        setup_scale_cluster_infrastructure_for_cnsa_rm(
+            tracked_resources=tracked_resources
+        )
 
     @tier1
     def test_pvc_pod_coexistence_ceph_and_scale(self, request, project_factory):
@@ -67,7 +84,6 @@ class TestMultiStorageCoexistence(ManageTest):
         rc_name = self.rc_name
         fs_cr_name = helpers.create_unique_resource_name("scale-test", "fs2")
 
-        # --- Pre-flight StorageClass Check ---
         log.info("Verifying Mandatory ODF StorageClasses...")
         sc_ocp = OCP(kind=constants.STORAGECLASS)
         required_scs = [
@@ -80,15 +96,13 @@ class TestMultiStorageCoexistence(ManageTest):
                 should_exist=True, resource_name=sc
             ), f"Required SC {sc} is missing!"
 
-        # --- Remote Connection ---
+        # Establish Remote Connection without passing 'request'
         setup_scale_remote_connection(
-            request=request,
             rc_name=rc_name,
             user_secret_name=self.user_secret_name,
             namespace=ns,
         )
 
-        # --- Filesystem ---
         fs_data = {
             "apiVersion": "scale.spectrum.ibm.com/v1beta1",
             "kind": "Filesystem",
@@ -105,7 +119,6 @@ class TestMultiStorageCoexistence(ManageTest):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-        # Wait for Filesystem Ready
         fs_ocp = OCP(
             kind="Filesystem.scale.spectrum.ibm.com",
             namespace=ns,
@@ -121,11 +134,9 @@ class TestMultiStorageCoexistence(ManageTest):
         )
         assert fs_sampler.wait_for_func_status(True), "Filesystem failed to stabilize."
 
-        # --- Coexistence Validation ---
         project = project_factory()
         namespace = project.namespace
 
-        # Create Scale StorageClass using dynamic tracking name
         sc_data = {
             "apiVersion": "storage.k8s.io/v1",
             "kind": "StorageClass",
@@ -137,7 +148,6 @@ class TestMultiStorageCoexistence(ManageTest):
         scale_sc = OCS(**sc_data)
         scale_sc.create()
 
-        # Create PVCs from all three backends
         pvc_rbd = helpers.create_pvc(
             sc_name=constants.DEFAULT_STORAGECLASS_RBD, size="5Gi", namespace=namespace
         )
@@ -153,7 +163,6 @@ class TestMultiStorageCoexistence(ManageTest):
         for pvc in [pvc_rbd, pvc_cephfs, pvc_scale]:
             helpers.wait_for_resource_state(pvc, constants.STATUS_BOUND, timeout=300)
 
-        # Deploy Coexistence Pod
         v_mounts = [
             {"name": "rbd-vol", "mountPath": "/mnt/rbd"},
             {"name": "cephfs-vol", "mountPath": "/mnt/cephfs"},
@@ -192,7 +201,6 @@ class TestMultiStorageCoexistence(ManageTest):
         test_pod.create()
         helpers.wait_for_resource_state(test_pod, constants.STATUS_RUNNING, timeout=300)
 
-        # IO Validation
         for mount in ["/mnt/rbd", "/mnt/cephfs", "/mnt/scale"]:
             log.info(f"Running IO on {mount}")
             test_pod.exec_cmd_on_pod(command=f"touch {mount}/test_file")

@@ -13,7 +13,6 @@ from ocs_ci.framework.testlib import (
     tier2,
     ui,
 )
-
 from ocs_ci.ocs.ui.page_objects.page_navigator import PageNavigator
 
 logger = logging.getLogger(__name__)
@@ -69,7 +68,7 @@ class TestScaleConnection(object):
     @skipif_ocs_version("<4.21")
     @black_squad
     @polarion_id("OCS-7758")
-    def test_add_delete_filesystem(self, setup_ui_class):
+    def test_add_filesystem(self, setup_ui_class):
         """
         Test connecting an additional filesystem when a Scale cluster is connected
         and subsequently deleting it.
@@ -79,9 +78,6 @@ class TestScaleConnection(object):
         external_systems.connect_scale_filesystem(
             scale_name=SCALE_CONNECTION_NAME, filesystem_name=FILESYSTEM_1
         )
-        # external_systems.delete_scale_filesystem(
-        #    scale_name=SCALE_CONNECTION_NAME, filesystem_name=FILESYSTEM_1
-        # )
 
     @ui
     @skipif_ibm_cloud_managed
@@ -96,7 +92,7 @@ class TestScaleConnection(object):
         scale_connect_obj = PageNavigator()
         external_systems = scale_connect_obj.nav_external_systems_page()
         external_systems.disconnect_scale(
-            scale_name=SCALE_CONNECTION_NAME,
+            scale_name=SCALE_CONNECTION_NAME, filesystem_name=FILESYSTEM_1
         )
         time.sleep(10)
         assert not external_systems.scale_present_on_page(

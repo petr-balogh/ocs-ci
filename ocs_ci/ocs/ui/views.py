@@ -4,7 +4,6 @@ from ocs_ci.framework import config
 from ocs_ci.ocs import constants
 from ocs_ci.utility.utils import get_ocp_version
 
-
 logger = logging.getLogger(__name__)
 
 osd_sizes = ("512", "2048", "4096", "0.5 TiB", "1 TiB", "2 TiB", "4 TiB", "8 TiB")
@@ -4125,6 +4124,19 @@ external_systems = {
     ),
     "explore_external_systems_link": (
         "//a[normalize-space()='Explore all supported external systems']",
+        By.XPATH,
+    ),
+    "modal_cancel_button": (
+        "//button[normalize-space()='Cancel']",
+        By.XPATH,
+    ),
+    "modal_error_alert": (
+        "//div[contains(@class, 'c-alert') and contains(@class, '-m-danger')]",
+        By.XPATH,
+    ),
+    # Single, explicit Scale connection name link (removed '|' OR operator)
+    "scale_connection_name_link": (
+        "//td[@data-label='Name']//a[normalize-space()='{}']",
         By.XPATH,
     ),
 }
