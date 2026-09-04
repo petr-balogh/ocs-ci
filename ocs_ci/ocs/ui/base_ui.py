@@ -1204,9 +1204,21 @@ class SeleniumDriver(WebDriver):
                 chrome_options.add_argument("--no-proxy-server")
 
             chrome_browser_type = ocsci_config.UI_SELENIUM.get("chrome_type")
+
+            # Enable detailed ChromeDriver logging for container debugging
+            # See: https://github.com/SeleniumHQ/selenium/issues/13376
+            import logging
+            import subprocess
+
+            # Enable Selenium debug logging first
+            logging.getLogger("selenium").setLevel(logging.DEBUG)
+
             chrome_service = Service(
-                ChromeDriverManager(chrome_type=chrome_browser_type).install()
+                ChromeDriverManager(chrome_type=chrome_browser_type).install(),
+                service_args=["--verbose"],
+                log_output=subprocess.STDOUT,
             )
+
             driver = webdriver.Chrome(
                 service=chrome_service,
                 options=chrome_options,

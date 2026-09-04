@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -285,65 +286,174 @@ class BucketsTabPermissions(ObjectStorage, ConfirmDialog):
         Raises:
             NoSuchElementException: If UI elements are not found.
         """
-        try:
-            self.do_click(
-                self.bucket_tab["policy_code_editor"],
-                enable_screenshot=False,
-                copy_dom=False,
-            )
-        except TimeoutException:
-            pass
+        # Wait for Monaco editor to be fully loaded (containerized Chrome needs more time)
+        self._wait_for_monaco_ready()
+
+        # Small delay to ensure editor is fully initialized
+        time.sleep(1)
+
+        # Skip clicking on div.view-lines in containerized environments as it can crash Chrome
+        # The JavaScript approach below will work without needing to click first
+        logger.info("Setting policy JSON directly via JavaScript (skipping editor click to avoid container issues)")
 
         self._set_content_via_javascript(policy_json)
 
-    def _set_content_via_javascript(self, content: str) -> None:
+    def _wait_for_monaco_ready(self, timeout: int = 60) -> None:
+        """
+        Wait for Monaco editor to be fully loaded and ready.
+
+        Args:
+            timeout (int): Maximum time to wait in seconds.
+
+        Raises:
+            TimeoutException: If Monaco doesn't load within timeout.
+        """
+        logger.info("Waiting for Monaco editor or textarea to be ready...")
+
+        # First try to wait for the textarea element using Selenium (safer than JS in containers)
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.by import By
+
+        start_time = time.time()
+        textarea_found = False
+        monaco_found = False
+
+        # Wait for either textarea or Monaco to be available
+        while time.time() - start_time < timeout:
+            # Check for textarea first (most reliable in containers)
+            try:
+                textarea = self.driver.find_element(By.CSS_SELECTOR, 'textarea.inputarea')
+                if textarea:
+                    logger.info("Textarea element found (Monaco's underlying input)")
+                    textarea_found = True
+                    # Give it extra time to fully initialize
+                    time.sleep(2)
+                    return
+            except NoSuchElementException:
+                pass
+            except WebDriverException as e:
+                logger.debug(f"Textarea check failed: {str(e)}")
+
+            # Try Monaco API as fallback (may not work in containers)
+            try:
+                check_monaco_js = """
+                try {
+                    if (window.monaco && window.monaco.editor) {
+                        var editors = window.monaco.editor.getEditors();
+                        return editors && editors.length > 0;
+                    }
+                    return false;
+                } catch(e) {
+                    console.log('Monaco check error: ' + e);
+                    return false;
+                }
+                """
+                result = self.driver.execute_script(check_monaco_js)
+                if result:
+                    logger.info("Monaco editor API is ready")
+                    monaco_found = True
+                    time.sleep(1)
+                    return
+            except WebDriverException as e:
+                logger.debug(f"Monaco JS check failed: {str(e)}")
+
+            time.sleep(1)
+
+        # Provide detailed error message
+        error_details = []
+        if not textarea_found:
+            error_details.append("textarea.inputarea not found")
+        if not monaco_found:
+            error_details.append("Monaco API not available")
+
+        raise TimeoutException(
+            f"Monaco editor not ready after {timeout} seconds. "
+            f"Issues: {', '.join(error_details)}. "
+            "This typically happens in containerized Chrome environments with rendering issues."
+        )
+
+    def _set_content_via_javascript(self, content: str, retry_count: int = 3) -> None:
         """
         Set content using JavaScript with Monaco and textarea fallbacks.
 
         Args:
             content (str): Content to set in the editor.
+            retry_count (int): Number of retries if setting fails.
 
         Raises:
-            TimeoutException: If all fallback strategies fail.
+            TimeoutException: If all fallback strategies fail after retries.
         """
         js_code = """
-        // Try Monaco editor API first
-        if (window.monaco && window.monaco.editor) {
-            const editors = window.monaco.editor.getEditors();
-            if (editors.length > 0) {
-                const editor = editors[0];
-                editor.setValue(arguments[0]);
-                return 'monaco_success';
+        try {
+            // Try Monaco editor API first
+            if (window.monaco && window.monaco.editor) {
+                const editors = window.monaco.editor.getEditors();
+                if (editors && editors.length > 0) {
+                    const editor = editors[0];
+                    editor.setValue(arguments[0]);
+                    return 'monaco_success';
+                }
             }
+        } catch(e) {
+            console.log('Monaco setValue failed: ' + e);
         }
 
-        // Fallback to textarea manipulation
-        const textArea = document.querySelector('textarea.inputarea');
-        if (textArea) {
-            textArea.value = arguments[0];
-            textArea.dispatchEvent(new Event('input', { bubbles: true }));
-            return 'textarea_success';
+        try {
+            // Fallback to textarea manipulation (most reliable in containers)
+            const textArea = document.querySelector('textarea.inputarea');
+            if (textArea) {
+                textArea.value = arguments[0];
+                textArea.dispatchEvent(new Event('input', { bubbles: true }));
+                textArea.dispatchEvent(new Event('change', { bubbles: true }));
+                return 'textarea_success';
+            }
+        } catch(e) {
+            console.log('Textarea manipulation failed: ' + e);
         }
 
         return 'failed';
         """
 
-        try:
-            result = self.driver.execute_script(js_code, content)
-            if result == "failed":
-                error_msg = (
-                    "Failed to set policy JSON in Monaco editor using JavaScript approach. "
-                    "Check if Monaco editor is properly loaded and accessible."
-                )
-                raise TimeoutException(error_msg)
+        for attempt in range(retry_count):
+            try:
+                result = self.driver.execute_script(js_code, content)
+                if result == "monaco_success":
+                    logger.info("Successfully set content via Monaco editor API")
+                    return
+                elif result == "textarea_success":
+                    logger.info("Successfully set content via textarea fallback")
+                    return
+                else:
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{retry_count}: "
+                        "Monaco/textarea not found, retrying..."
+                    )
+                    if attempt < retry_count - 1:
+                        time.sleep(1)
 
-        except WebDriverException as e:
-            error_msg = (
-                "Failed to set policy JSON in Monaco editor using JavaScript approach. "
-                "Check if Monaco editor is properly loaded and accessible."
-            )
-            logger.exception(error_msg)
-            raise TimeoutException(error_msg) from e
+            except WebDriverException as e:
+                logger.warning(
+                    f"Attempt {attempt + 1}/{retry_count}: "
+                    f"WebDriver exception: {str(e)}"
+                )
+                if attempt < retry_count - 1:
+                    time.sleep(1)
+                else:
+                    error_msg = (
+                        "Failed to set policy JSON in Monaco editor using JavaScript "
+                        f"approach after {retry_count} attempts. "
+                        "Check if Monaco editor is properly loaded and accessible."
+                    )
+                    logger.exception(error_msg)
+                    raise TimeoutException(error_msg) from e
+
+        error_msg = (
+            "Failed to set policy JSON in Monaco editor using JavaScript approach "
+            f"after {retry_count} attempts. "
+            "Check if Monaco editor is properly loaded and accessible."
+        )
+        raise TimeoutException(error_msg)
 
     def _check_for_policy_error_dialog(self) -> tuple[bool, str]:
         """
